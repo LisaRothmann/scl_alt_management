@@ -1,0 +1,1156 @@
+---
+title: "Alternative management"
+author: "Marlese"
+date: "2/9/2021"
+output: word_document
+---
+
+
+# librarires
+
+```{r}
+
+library(openxlsx)
+library(readr)
+
+library(tidytext)
+library(tidyr)
+library(tidyverse)
+library(ggthemes)
+library(ggplot2)
+library(rvest)
+library(xml2)
+library(dplyr)
+library(plyr)
+library(agricolae)
+
+library(MASS)  #ordered logistic regression
+
+# logistic
+require(foreign)
+require(ggplot2)
+require(MASS)
+require(Hmisc)
+require(reshape2)
+
+
+library(nnet)
+
+library(wesanderson)
+library(RColorBrewer)
+
+```
+
+#import
+
+```{r}
+
+# manage_raw = read.xlsx("C:\\Users\\2010088819\\Documents\\R Projects\\Scle_management\\manage.xlsx", "temp")
+#  
+# write.csv(manage_raw, "data/raw_alt_manage.csv")
+
+manage_raw = read.csv("data/raw_alt_manage.csv")
+
+```
+
+
+# temperature
+## modify
+
+```{r}
+
+
+manage_raw$size_mm <- as.factor(manage_raw$size_mm)
+
+manage_raw$weight_g <- as.factor(manage_raw$weight_g)
+
+manage_raw$rep <- as.factor(manage_raw$rep)
+
+manage_raw$depth_cm <- as.factor(manage_raw$depth_cm)
+
+manage_raw$time_min <- as.factor(manage_raw$time_min)
+
+manage_raw$temp <- as.factor(manage_raw$temp)
+
+manage_raw$myc <- as.character(manage_raw$myc)
+
+manage_raw$scle <- as.character(manage_raw$scle)
+
+
+
+
+manage_raw1 <- manage_raw %>%
+    filter(temp %in% c("125", "155", "185", "200")) %>% 
+    mutate(myc1 = case_when(myc == "0" ~ "absent",
+                            myc == "1" ~ "contamination",
+                            myc == "2" ~ "present_partial",
+                            myc == "3" ~ "present_full",
+                            myc != "*" ~ myc),
+           scle1 = case_when(scle == "0" ~ "absent",
+                             scle == "1" ~ "contamination",
+                             scle == "2" ~ "present_partial",
+                             scle == "3" ~ "present_full",
+                             scle != "*" ~ scle)) 
+  
+
+```
+
+
+## histogram
+
+```{r}
+freq_df <- manage_raw %>%
+  filter(temp %in% c("125", "155", "185", "200")) %>% 
+  mutate(binary = case_when(myc == 0 ~ 0,
+                            myc == 1 ~ 0,
+                            myc == 2 ~ 1,
+                            myc == 3 ~ 1)) %>% 
+  group_by(size_mm, weight_g, depth_cm, time_min, temp) %>% 
+  dplyr::summarise(freq = sum(binary)/4*100)
+
+
+new_label_time <- c("5" = "5 min", "10" = "10 min", "15" = "15 min")
+new_label_depth <- c("0" = "0 cm", "5" = "5 cm")
+new_label_weight <- c("0.054" = "0.054 g", "0.222" = "0.222 g", "0.67" = "0.670 g", "1.31" = "1.310 g")
+
+
+freq_df %>% 
+  ggplot()+
+  geom_boxplot(aes(temp, freq), fill = "grey")+
+  facet_grid(~weight_g~time_min, labeller = labeller(weight_g = new_label_weight, time_min = new_label_time))+
+    theme_bw()+
+    labs(x = expression(paste("Temperature (",degree,"C)")), y = "Germination (%)")+
+  theme(axis.title.x=element_text(size=18,face="bold"),
+       axis.title.y=element_text(size=18,face="bold"),
+       axis.text.y = element_text(size = 14, color = "black", face = "bold"),
+       axis.text.x = element_text(size = 14, color = "black", face = "bold"),
+       legend.text = element_text(size = 16),
+       legend.title = element_text(size = 18),
+       strip.background = element_rect(fill="white", size=1, color="black"),
+       strip.text.x = element_text(size=14, face="bold"),
+       strip.text.y = element_text(size=14, face="bold"))
+         ggsave("plots/variables_weight.png", units = "cm", width = 60, height = 30, dpi = 300)
+
+freq_df %>% 
+  ggplot()+
+  geom_boxplot(aes(temp, freq), fill = "grey")+
+  facet_grid(~depth_cm~time_min, labeller = labeller(depth_cm = new_label_depth, time_min = new_label_time))+
+    theme_bw()+
+    labs(x = expression(paste("Temperature (",degree,"C)")), y = "Germination (%)")+
+  theme(axis.title.x=element_text(size=18,face="bold"),
+       axis.title.y=element_text(size=18,face="bold"),
+       axis.text.y = element_text(size = 14, color = "black", face = "bold"),
+       axis.text.x = element_text(size = 14, color = "black", face = "bold"),
+       legend.text = element_text(size = 16),
+       legend.title = element_text(size = 18),
+       strip.background = element_rect(fill="white", size=1, color="black"),
+       strip.text.x = element_text(size=14, face="bold"),
+       strip.text.y = element_text(size=14, face="bold"))+
+         ggsave("plots/variables_depth.png", units = "cm", width = 60, height = 30, dpi = 300)
+
+  
+  
+library(ggpubr)
+
+ggscatter(manage_raw, x = "size_mm", y = "weight_g",
+          add = "reg.line",
+          conf.int = TRUE,
+          add.oarams= list(color = "blue",
+                           fill = "gray"))
+  stat_cor(method = "pearson", label.x = 15, label.y = 1)
+```
+
+
+## anova
+anova done in SAS and used. Could not do 4 way in R getting perfect fit. LSD and graphs used from R and SAS
+
+```{r}
+
+aov.freq <- lm(freq ~ weight_g*temp + weight_g*time_min + weight_g*depth_cm + temp*time_min + temp*depth_cm + time_min*depth_cm + temp*time_min*depth_cm + temp*depth_cm*weight_g + time_min*depth_cm*weight_g, freq_df)
+
+summary(aov.freq)
+anova(aov.freq)
+
+#write.xlsx(aov.freq, "anova_manage.xlsx")
+
+#residual standard error
+
+sqrt(deviance(aov.freq)/df.residual(aov.freq))
+
+
+#time.lm <- lm(formula = time ~ type + cleaner,
+            #  data = poopdeck)
+
+```
+
+
+## LSD
+
+```{r}
+
+
+a <- LSD.test(aov.freq, 
+              "temp", 
+              DFerror = aov.freq$df.residual, 
+              MSerror = deviance(aov.freq)/aov.freq$df.residual, 
+              alpha = 0.05, 
+              group = TRUE)
+
+b <- LSD.test(aov.freq, 
+              "time_min", 
+              DFerror = aov.freq$df.residual, 
+              MSerror = deviance(aov.freq)/aov.freq$df.residual, 
+              alpha = 0.05, 
+              group = TRUE)
+c <- LSD.test(aov.freq, 
+              "depth_cm", 
+              DFerror = aov.freq$df.residual, 
+              MSerror = deviance(aov.freq)/aov.freq$df.residual, 
+              alpha = 0.05, 
+              group = TRUE)
+d <- LSD.test(aov.freq, 
+              "weight_g", 
+              DFerror = aov.freq$df.residual, 
+              MSerror = deviance(aov.freq)/aov.freq$df.residual, 
+              alpha = 0.05, 
+              group = TRUE)
+
+ab = LSD.test(aov.freq,
+                  c("temp", "time_min"),
+                  DFerror = aov.freq$df.residual,
+                  MSerror = deviance(aov.freq)/aov.freq$df.residual,
+                  alpha = 0.05,
+                  group = TRUE,
+                  console = TRUE)
+
+ac = LSD.test(aov.freq,
+                  c("temp", "depth_cm"),
+                  DFerror = aov.freq$df.residual,
+                  MSerror = deviance(aov.freq)/aov.freq$df.residual,
+                  alpha = 0.05,
+                  group = TRUE,
+                  console = TRUE)
+
+bc = LSD.test(aov.freq,
+                  c("time_min", "depth_cm"),
+                  DFerror = aov.freq$df.residual,
+                  MSerror = deviance(aov.freq)/aov.freq$df.residual,
+                  alpha = 0.05,
+                  group = TRUE,
+                  console = TRUE)
+
+
+ad = LSD.test(aov.freq,
+                  c("temp", "weight_g"),
+                  DFerror = aov.freq$df.residual,
+                  MSerror = deviance(aov.freq)/aov.freq$df.residual,
+                  alpha = 0.05,
+                  group = TRUE,
+                  console = TRUE)
+
+abc = LSD.test(aov.freq,
+                  c("temp", "time_min", "depth_cm"),
+                  DFerror = aov.freq$df.residual,
+                  MSerror = deviance(aov.freq)/aov.freq$df.residual,
+                  alpha = 0.05,
+                  group = TRUE,
+                  console = TRUE)
+
+abcd = LSD.test(aov.freq,
+                  c("weight_g" ,"temp", "time_min", "depth_cm"),
+                  DFerror = aov.freq$df.residual,
+                  MSerror = deviance(aov.freq)/aov.freq$df.residual,
+                  alpha = 0.05,
+                  group = TRUE,
+                  console = TRUE)
+
+
+```
+
+
+##### original grouping
+
+```{r}
+
+## Original order of LSD$group 
+
+ascend_A = a$groups %>%
+          group_by(rownames(a$groups)) %>%
+          arrange(rownames(a$groups))
+
+print(ascend_A)
+
+ascend_B = b$groups %>%
+           group_by(rownames(b$groups)) %>%
+           arrange(rownames(b$groups))
+
+print(ascend_B)
+
+
+ascend_C = c$groups %>%
+          group_by(rownames(c$groups)) %>%
+          arrange(rownames(c$groups))
+
+print(ascend_C)
+
+ascend_D = d$groups %>%
+          group_by(rownames(d$groups)) %>%
+          arrange(rownames(d$groups))
+
+print(ascend_D)
+
+ascend_AB = ab$groups %>%
+          group_by(rownames(ab$groups)) %>% 
+          arrange(freq)
+
+print(ascend_AB)
+
+ascend_AC = ac$groups %>%
+          group_by(rownames(ac$groups)) %>%
+          arrange(freq)
+
+print(ascend_AC)
+
+ascend_BC = bc$groups %>%
+          group_by(rownames(bc$groups)) %>%
+          arrange(freq)
+
+print(ascend_BC)
+
+ascend_AD = ad$groups %>%
+          group_by(rownames(ad$groups)) %>%
+          arrange(freq)
+
+print(ascend_AD)
+
+ascend_ABC = abc$groups %>%
+          group_by(rownames(abc$groups)) %>%
+          arrange(freq)
+
+print(ascend_ABC)
+
+ascend_ABCD = abcd$groups %>%
+          group_by(rownames(abcd$groups)) %>%
+          arrange(freq)
+
+print(ascend_ABCD)
+
+
+```
+
+
+##### Mean error and DF
+
+```{r}
+meanSE_a = freq_df %>%
+          dplyr::group_by(temp) %>% 
+          dplyr::summarise(avg_a = mean(freq),
+                    se = sd(freq)/sqrt(length(freq)))
+
+print(meanSE_a)
+
+meanSE_b = freq_df %>%
+          dplyr::group_by(time_min) %>%
+          dplyr::summarise(avg_b = mean(freq),
+                    se = sd(freq)/sqrt(length(freq)))
+print(meanSE_b)
+
+meanSE_c = freq_df %>%
+          dplyr::group_by(depth_cm) %>%
+          dplyr::summarise(avg_c = mean(freq),
+                    se = sd(freq)/sqrt(length(freq)))
+print(meanSE_c)
+
+meanSE_d = freq_df %>%
+          dplyr::group_by(weight_g) %>%
+          dplyr::summarise(avg_d = mean(freq),
+                    se = sd(freq)/sqrt(length(freq)))
+print(meanSE_d)
+
+MeanSE_AB = freq_df %>%
+          dplyr::group_by(temp, time_min) %>%
+          dplyr::summarise(avg_AB = mean(freq),
+                    se = sd(freq)/sqrt(length(freq)))
+
+MeanSE_AB = MeanSE_AB %>% 
+  arrange(avg_AB)
+
+
+print(MeanSE_AB)
+
+MeanSE_AC = freq_df %>%
+          dplyr::group_by(temp, depth_cm) %>%
+          dplyr::summarise(avg_AC = mean(freq),
+                    se = sd(freq)/sqrt(length(freq)))
+
+MeanSE_AC = MeanSE_AC %>% 
+  arrange(avg_AC)
+
+print(MeanSE_AC)
+
+MeanSE_BC = freq_df %>%
+          dplyr::group_by(time_min, depth_cm) %>%
+          dplyr::summarise(avg_BC = mean(freq),
+                    se = sd(freq)/sqrt(length(freq)))
+
+MeanSE_BC = MeanSE_BC %>% 
+  arrange(avg_BC)
+
+print(MeanSE_BC)
+
+MeanSE_AD = freq_df %>%
+          dplyr::group_by(temp, weight_g) %>%
+          dplyr::summarise(avg_AD = mean(freq),
+                    se = sd(freq)/sqrt(length(freq)))
+
+MeanSE_AD = MeanSE_AD %>% 
+  arrange(avg_AD)
+
+print(MeanSE_AD)
+
+MeanSE_ABC = freq_df %>%
+          dplyr::group_by(temp, time_min, depth_cm) %>%
+          dplyr::summarise(avg_ABC = mean(freq),
+                    se = sd(freq)/sqrt(length(freq)))
+MeanSE_ABC <- MeanSE_ABC %>% 
+  arrange(avg_ABC)
+
+print(MeanSE_ABC)
+
+
+MeanSE_ABCD = freq_df %>%
+          dplyr::group_by(temp, time_min, depth_cm, ) %>%
+          dplyr::summarise(avg_ABC = mean(freq),
+                    se = sd(freq)/sqrt(length(freq)))
+MeanSE_ABC <- MeanSE_ABC %>% 
+  arrange(avg_ABC)
+
+print(MeanSE_ABC)
+
+
+```
+
+### plot LSD
+
+#### temp
+#### fig 2
+```{r}
+#Figure 2
+ggplot(meanSE_a, aes(x = temp,
+                          y = avg_a))+ 
+          geom_bar(stat = "identity",
+                   position = position_dodge(width=0.9),
+                   width = 0.6,
+         
+                             fill = "grey")+ 
+          geom_errorbar(aes(ymax = avg_a + se,
+                            ymin = avg_a - se), 
+                        position = position_dodge(width=0.9), 
+                        width = 0.1, size = 0.5)+
+          labs(x = expression(paste("TEMPERATURE (",degree,"C)")),
+               y = "MEAN GERMINATION (%)")+
+          geom_text(aes(x = temp,
+                        y = avg_a + se,
+                        label = as.matrix(ascend_A$groups)),
+                    size = 3.5,
+                    position = position_dodge(width = 0.9),
+                    vjust = -(0.5))+
+  scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 20), expand = c(0,0))+
+  theme_bw()+
+  theme(axis.title.x=element_text(size=9, colour = "black"),
+       axis.title.y=element_text(size=9, colour = "black"),
+       axis.text.y = element_text(size = 9, colour = "black"),
+       axis.text.x = element_text(size = 9, colour = "black"),
+       legend.text = element_text(size = 14, colour = "black"),
+       legend.title = element_text(size = 14, colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+       strip.background = element_rect(fill="white", size=0.5, color="black"))+
+         ggsave("plots/fig2_Temperature_lsd.png", units = "cm", width = 20, height = 15, dpi = 600)
+```
+
+
+#### time
+##### fig 4
+```{r}
+#Figure 4
+ggplot(meanSE_b, aes(x = time_min,
+                          y = avg_b))+
+          geom_bar(stat = "identity",
+                   position = position_dodge(width=0.9),
+                   width = 0.6,
+                   fill = "grey")+ 
+          geom_errorbar(aes(ymax = avg_b + se,
+                            ymin = avg_b - se), 
+                        position = position_dodge(width=0.9), 
+                        width = 0.1, size = 0.5)+
+          labs(x = "TIME (min)",
+               y = "MEAN GERMINATION (%)")+
+          geom_text(aes(x = time_min,
+                        y = avg_b + se,
+                        label = as.matrix(ascend_B$groups)),
+                    size = 3.5,
+                    position = position_dodge(width = 0.9),
+                    vjust = -(0.5))+
+  scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 20), expand = c(0,0))+
+  theme_bw()+
+  theme(axis.title.x=element_text(size=9, colour = "black"),
+       axis.title.y=element_text(size=9, colour = "black"),
+       axis.text.y = element_text(size = 9, colour = "black"),
+       axis.text.x = element_text(size = 9, colour = "black"),
+       legend.text = element_text(size = 14, colour = "black"),
+       legend.title = element_text(size = 14, colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+       strip.background = element_rect(fill="white", size=1, color="black"))
+         ggsave("plots/fig4_time_lsd.png", units = "cm", width = 15, height = 10, dpi = 600)
+
+```
+
+
+#### depth
+##### fig 6
+```{r}
+#figure 6
+ggplot(meanSE_c, aes(x = depth_cm,
+                          y = avg_c))+
+          geom_bar(stat = "identity",
+                   position = position_dodge(width=0.9),
+                   width = 0.4,
+                   fill = "grey")+ 
+          geom_errorbar(aes(ymax = avg_c + se,
+                            ymin = avg_c - se), 
+                        position = position_dodge(width=0.9), 
+                        width = 0.1, size = 0.5)+
+          labs(x = "DEPTH (cm)",
+               y = "MEAN GERMINATION (%)")+
+          geom_text(aes(x = depth_cm,
+                        y = avg_c + se,
+                        label = as.matrix(ascend_C$groups)),
+                    size = 3.5,
+                    position = position_dodge(width = 0.9),
+                    vjust = -(0.5))+
+  scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 20), expand = c(0,0))+
+  theme_bw()+
+  theme(axis.title.x=element_text(size=9, colour = "black"),
+       axis.title.y=element_text(size=9, colour = "black"),
+       axis.text.y = element_text(size = 9, colour = "black"),
+       axis.text.x = element_text(size = 9, colour = "black"),
+       legend.text = element_text(size = 14, colour = "black"),
+       legend.title = element_text(size = 14, colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+       strip.background = element_rect(fill="white", size=1, color="black"))
+         ggsave("plots/fig_6_depth_lsd.png", units = "cm", width = 15, height = 10, dpi = 600)
+```
+
+
+#### weight
+##### fig 1
+```{r}
+
+ggplot(meanSE_d, aes(x = weight_g,
+                          y = avg_d))+
+          geom_bar(stat = "identity",
+                   position = position_dodge(width=0.9),
+                   width = 0.6,
+                   fill = "grey")+ 
+          geom_errorbar(aes(ymax = avg_d + se,
+                            ymin = avg_d - se), 
+                        position = position_dodge(width=0.9), 
+                        width = 0.1, size = 0.5)+
+          geom_text(aes(x = weight_g,
+                        y = avg_d + se,
+                        label = as.matrix(ascend_D$groups)),
+                    size = 5,
+                    position = position_dodge(width = 0.9),
+                    vjust = -(0.5))+
+  scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 20), expand = c(0,0))+
+          labs(x = "MEAN SCLEROTIAL WEIGHT (g)",
+               y = "MEAN GERMINATION (%)")+
+  theme_bw()+
+   theme(axis.title.x=element_text(size=11, colour = "black"),
+       axis.title.y=element_text(size=11, colour = "black"),
+       axis.text.y = element_text(size = 11, colour = "black"),
+       axis.text.x = element_text(size = 11, colour = "black"),
+       legend.text = element_text(size = 18, colour = "black"),
+       legend.title = element_text(size = 18, colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+       strip.background = element_rect(fill="white", size=1, color="black"))
+         ggsave("plots/fig_1_weight_lsd.png", units = "cm", width = 25, height = 15, dpi = 600)
+
+```
+
+
+#### interaction
+##### temp x time
+##### fig 5 
+```{r}
+
+ggplot(MeanSE_AB, aes(x = temp,
+                          y = avg_AB,
+                          fill = factor(time_min)))+ 
+          geom_bar(stat = "identity",
+                   color = "black",
+                   position = position_dodge(width=0.9))+ 
+          scale_fill_grey(start = 0.4, end = 0.8)+ 
+          geom_errorbar(aes(ymax = avg_AB + se,
+                            ymin = avg_AB), 
+                        position = position_dodge(width=0.9), 
+                        width = 0.1, size = 0.5)+ 
+          labs(x = expression(paste("TEMPERATURE (",degree,"C)")),
+               y = "MEAN GERMINATION (%)",
+               fill = "Time (min)")+ 
+          geom_text(aes(x = temp,
+                        y = avg_AB + se,
+                        label = as.matrix(ascend_AB$groups)),
+                    size = 5,
+                    position = position_dodge(width = 0.9),
+                    vjust = -(0.5))+
+  scale_y_continuous(limits = c(0, 120), breaks = seq(0, 100, by = 20), expand = c(0,0))+
+  theme_bw()+
+   theme(axis.title.x=element_text(size=12, colour = "black"),
+       axis.title.y=element_text(size=12, colour = "black"),
+       axis.text.y = element_text(size = 12, colour = "black"),
+       axis.text.x = element_text(size = 12, colour = "black"),
+       legend.text = element_text(size = 18, colour = "black"),
+       legend.title = element_text(size = 18, colour = "black"),
+       legend.position = c(.95, .95),
+       legend.justification = c("right", "top"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+       strip.background = element_rect(fill="white", size=1, color="black"))
+         ggsave("plots/fig_5_temp_time_lsd.png", units = "cm", width = 25, height = 15, dpi = 600)
+
+ggplot(MeanSE_AB, aes(x = temp,
+                          y = avg_AB,
+                          fill = factor(time_min)))+ 
+          geom_bar(stat = "identity",
+                   color = "black",
+                   position = position_dodge(width=0.9))+
+  scale_fill_manual(values=c("#999999", "#E69F00", "#56B4E9"))+
+          labs(x = expression(paste("Temperature (",degree,"C)")),
+               y = "Mean germination (%)",
+               fill = "Time (min)")+ 
+  scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 20), expand = c(0,0))+
+  theme_bw()+
+   theme(axis.ticks.length=unit(-0.5, "cm"),
+         axis.ticks.x = element_blank(),
+     axis.title.x=element_text(size=24, colour = "black"),
+       axis.title.y=element_text(size=24, colour = "black"),
+       axis.text.y = element_text(size = 24, colour = "black"),
+       axis.text.x = element_text(size = 24, colour = "black"),
+       legend.text = element_text(size = 22, colour = "black"),
+       legend.title = element_text(size = 22, colour = "black"),
+       legend.position = c(.95, .95),
+       legend.justification = c("right", "top"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+       strip.background = element_rect(fill="white", size=1, color="black"))
+         ggsave("plots/temp_time_boeredag.pdf", units = "cm", width = 17.6, height = 20, dpi = 300)
+
+```
+
+
+##### temp x depth
+##### fig 7
+```{r}
+ggplot(MeanSE_AC, aes(x = temp,
+                          y = avg_AC,
+                          fill = factor(depth_cm)))+ 
+          geom_bar(stat = "identity",
+                   color = "black",
+                   position = position_dodge(width=0.9))+ 
+          labs(x = expression(paste("TEMPERATURE (",degree,"C)")),
+               y = "MEAN GERMINATION (%)",
+               fill = "Depth (cm)")+
+  scale_fill_grey(start = 0.4, end = 0.8)+ 
+  geom_errorbar(aes(ymax = avg_AC + se,
+                            ymin = avg_AC), 
+                        position = position_dodge(width=0.9), 
+                        width = 0.1, size = 0.5)+ 
+  geom_text(aes(x = temp,
+                        y = avg_AC + se,
+                        label = as.matrix(ascend_AC$groups)),
+                    size = 5,
+                    position = position_dodge(width = 0.9),
+                    vjust = -(0.5))+
+   scale_y_continuous(limits = c(0, 120), breaks = seq(0, 100, by = 20), expand = c(0,0))+
+  theme_bw()+
+   theme(         axis.title.x=element_text(size=12, colour = "black"),
+       axis.title.y=element_text(size=12, colour = "black"),
+       axis.text.y = element_text(size = 12, colour = "black"),
+       axis.text.x = element_text(size = 12, colour = "black"),
+       legend.text = element_text(size = 12, colour = "black"),
+       legend.title = element_text(size = 12, colour = "black"),
+       legend.position = c(.95, .95),
+       legend.justification = c("right", "top"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+       strip.background = element_rect(fill="white", size=1, color="black"))
+         ggsave("plots/fig_7_temp_depth_lsd.png", units = "cm", width = 20, height = 15, dpi = 600)
+
+
+ggplot(MeanSE_AC, aes(x = temp,
+                          y = avg_AC,
+                          fill = factor(depth_cm)))+ 
+          geom_bar(stat = "identity",
+                   color = "black",
+                   position = position_dodge(width=0.9))+ 
+          labs(x = expression(paste("Temperature (",degree,"C)")),
+               y = "Mean germination (%)",
+               fill = "Depth (cm)")+
+  scale_fill_manual(values=c("#999999", "#E69F00", "#56B4E9"))+
+   scale_y_continuous(limits = c(0, 120), breaks = seq(0, 100, by = 20), expand = c(0,0))+
+  theme_bw()+
+   theme(axis.ticks.length=unit(-0.5, "cm"),
+         axis.ticks.x = element_blank(),
+         axis.title.x=element_text(size=24, colour = "black"),
+       axis.title.y=element_text(size=24, colour = "black"),
+       axis.text.y = element_text(size = 24, colour = "black"),
+       axis.text.x = element_text(size = 24, colour = "black"),
+       legend.text = element_text(size = 22, colour = "black"),
+       legend.title = element_text(size = 22, colour = "black"),
+       legend.position = c(.95, .95),
+       legend.justification = c("right", "top"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+       strip.background = element_rect(fill="white", size=1, color="black"))
+         ggsave("plots/temp_depth_boeredag.pdf", units = "cm", width = 17.6, height = 20, dpi = 300)
+         
+         
+
+
+
+```
+
+
+##### time x depth
+##### fig 8
+```{r}
+
+ ggplot(MeanSE_BC, aes(x = time_min,
+                          y = avg_BC,
+                          fill = factor(depth_cm)))+ 
+          geom_bar(stat = "identity",
+                   color = "black",
+                   position = position_dodge(width=0.9))+ 
+          scale_fill_grey(start = 0.4, end = 0.8, labels = c("0", "5"))+ 
+          geom_errorbar(aes(ymax = avg_BC + se,
+                            ymin = avg_BC), 
+                        position = position_dodge(width=0.9), 
+                        width = 0.1, size = 0.5)+ 
+          labs(x = "TIME (min)",
+               y = "MEAN GERMINATION (%)",
+               fill = "Depth (cm)")+ 
+          geom_text(aes(x = time_min,
+                        y = avg_BC + se,
+                        label = as.matrix(ascend_BC$groups)),
+                    size = 5,
+                    position = position_dodge(width = 0.9),
+                    vjust = -(0.5))+
+  scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 20), expand = c(0,0))+
+  theme_bw()+
+   theme(         axis.title.x=element_text(size=10, colour = "black"),
+       axis.title.y=element_text(size=10, colour = "black"),
+       axis.text.y = element_text(size = 10, colour = "black"),
+       axis.text.x = element_text(size = 10, colour = "black"),
+       legend.text = element_text(size = 10, colour = "black"),
+       legend.title = element_text(size = 10, colour = "black"),
+       legend.position = c(.95, .95),
+       legend.justification = c("right", "top"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+       strip.background = element_rect(fill="white", size=1, color="black"))
+         ggsave("plots/fig_8_ime_depth_lsd.png", units = "cm", width = 20, height = 15, dpi = 600)
+
+
+```
+
+
+##### weight x temp
+#### fig 3
+```{r}
+ggplot(MeanSE_AD, aes(x = temp,
+                          y = avg_AD,
+                          fill = factor(weight_g)))+ 
+          geom_bar(stat = "identity",
+                   color = "black",
+                   position = position_dodge(width=0.9))+ 
+          scale_fill_grey(start = 0.4, end = 0.8, labels = c("0.054", "0.222", "0.670", "1.310"))+ 
+          geom_errorbar(aes(ymax = avg_AD + se,
+                            ymin = avg_AD), 
+                        position = position_dodge(width=0.9), 
+                        width = 0.1, size = 0.5)+ 
+          labs(x = expression(paste("TEMPERATURE (",degree,"C)")),
+               y = "MEAN GERMINATION (%)",
+               fill = "Mean sclerotial weight (g)")+ 
+          geom_text(aes(x = temp,
+                        y = avg_AD + se,
+                        label = as.matrix(ascend_AD$groups)),
+                    size = 5,
+                    position = position_dodge(width = 0.9),
+                    vjust = -(0.5))+
+  scale_y_continuous(limits = c(0, 120), breaks = seq(0, 100, by = 20), expand = c(0,0))+
+  theme_bw()+
+   theme(axis.title.x=element_text(size=12, colour = "black"),
+       axis.title.y=element_text(size=12, colour = "black"),
+       axis.text.y = element_text(size = 12, colour = "black"),
+       axis.text.x = element_text(size = 12, colour = "black"),
+       legend.text = element_text(size = 18, colour = "black"),
+       legend.title = element_text(size = 18, colour = "black"),
+       legend.position = c(.95, .95),
+       legend.justification = c("right", "top"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+       strip.background = element_rect(fill="white", size=1, color="black"))
+         ggsave("plots/fig_3_temp_weight_lsd.png", units = "cm", width = 25, height = 15, dpi = 600)
+
+
+
+
+
+
+# box <- ggplot()+
+#   geom_boxplot(data=freq_df,
+#                aes(x = temp, y = freq, fill= factor(weight_g)))+ 
+#   geom_point(data=freq_df,
+#                aes(x = temp, y = freq), alpha = 0.6, size = 2,  colour = "darkgreen")+
+#   theme(strip.text.y = element_text(
+#         size = 18, color = "black", face = "bold"
+#         ))+
+#     theme_clean(base_size = 18)+
+#     labs(y = "Mean Germination (%)") +
+#     theme(axis.text.x = element_text (size=18, face = "plain"),
+#     axis.title=element_text(size=18,face="bold"))
+
+
+
+i4
+
+```
+
+
+### temp x time x depth
+
+```{r}
+depth_new_name <- c("0" = "0 cm", "5" = "5 cm")
+
+ggplot(MeanSE_ABC, aes(x = temp,
+                          y = avg_ABC,
+                          fill = factor(time_min)))+ 
+          geom_bar(stat = "identity",
+                   color = "black",
+                   position = position_dodge(width=0.9))+
+          scale_fill_grey(start = 0.4, end = 0.8)+ 
+          geom_errorbar(aes(ymax = avg_ABC + se,
+                            ymin = avg_ABC), 
+                        position = position_dodge(width=0.9), 
+                        width = 0.1, size = 0.5)+ 
+          labs(x = expression(paste("TEMPERATURE (",degree,"C)")),
+               y = "MEAN GERMINATION (%)",
+               fill = "Time (min)")+ 
+          geom_text(aes(x = temp,
+                        y = avg_ABC + se,
+                        label = as.matrix(ascend_ABC$groups)),
+                    size = 3.5,
+                    position = position_dodge(width = 0.9),
+                    vjust = -(0.5))+
+  scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 20), expand = c(0,0))+
+  facet_grid(depth_cm~., labeller = labeller(depth_cm = depth_new_name))+
+  theme_bw()+
+   theme(axis.title.x=element_text(size=9, colour = "black"),
+       axis.title.y=element_text(size=9, colour = "black"),
+       axis.text.y = element_text(size = 9, colour = "black"),
+       axis.text.x = element_text(size = 9, colour = "black"),
+       legend.text = element_text(size = 14, colour = "black"),
+       legend.title = element_text(size = 14, colour = "black"),
+       legend.position = c(.95, .95),
+       legend.justification = c("right", "top"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+       strip.text = element_text(size=14, face="bold"))
+         ggsave("plots/fig_9_temp_time_depth_old_lsd.pdf", units = "cm", width = 35, height = 30, dpi = 300)
+
+three_raw = read.xlsx("C:/Users/coetzeela/OneDrive - University of the Free State/Documents/1. Research/Publications/Meiring_Marlese/Alt management/management_prac-r-code/management_prac/three_way.xlsx")
+```
+
+
+```{r}
+three_raw$Temp <- as.factor(three_raw$Temp)
+
+three <- ggplot(data = three_raw, aes(y = Perc, x = Temp)) + 
+   geom_bar(aes(fill = factor(Time)),
+            stat = "identity",
+            position = "dodge", 
+            color = "black")+
+          scale_fill_grey(start = 0.4, end = 0.8)+
+       facet_grid(Depth~., labeller = labeller(Depth = depth_new_name)) +
+ scale_x_discrete('TEMPERATURE (°C)')+
+       labs(x = expression(paste("TEMPERATURE (",degree,"C)")),
+            y = "MEAN GERMINATION (%)",
+            fill = "Time (min)")+
+  scale_y_continuous(limits = c(0, 120), breaks = seq(0, 100, by = 20), expand = c(0,0))+
+  geom_errorbar(aes(ymin = Perc, 
+                            ymax = Perc + SEPerc, 
+                            group = Time),
+                      size=0.5,  
+                      width=0.25,
+                      position=position_dodge(width = 1))+
+  geom_text(aes(x = Temp, 
+                y = Perc + SEPerc,
+                label = Group, 
+                group = Time),
+                    size = 5,
+            position=position_dodge(width = 1),
+                    vjust = -(0.3))+
+  theme_bw()+
+   theme(axis.title.x=element_text(size=14, colour = "black"),
+       axis.title.y=element_text(size=14, colour = "black"),
+       axis.text.y = element_text(size = 14, colour = "black"),
+       axis.text.x = element_text(size = 14, colour = "black"),
+       legend.text = element_text(size = 14, colour = "black"),
+       legend.title = element_text(size = 14, colour = "black"),
+       legend.position = c(.95, .95),
+       legend.justification = c("right", "top"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+       strip.text = element_text(size=14, face="bold"))+
+  theme(panel.spacing.x = unit(0.4, "cm"),
+        panel.spacing.y = unit(0.4, "cm"))
+         ggsave("plots/fig_9_temp_time_depth_lsd.png", units = "cm", width = 25, height = 20, dpi = 600)
+
+three
+```
+### temp x time x depth x weight
+##### fig 10
+```{r}
+
+time_new_name <- c("5" = "5 min", "10" = "10 min", "15" = "15 min")
+
+size_new_name <- c("0.054" = "0.054 g", "0.222" = "0.222 g", "0.67" = "0.670 g", "1.31" = "1.31 g")
+
+
+
+four_raw = read.xlsx("C:/Users/coetzeela/OneDrive - University of the Free State/Documents/1. Research/Publications/Meiring_Marlese/Alt management/management_prac-r-code/management_prac/four_way.xlsx")
+
+four_raw$Temp <- as.factor(four_raw$Temp)
+
+four <- ggplot(data = four_raw, aes(y = Perc, x = Temp)) + 
+   geom_bar(aes(fill = factor(Depth)),
+            stat = "identity",
+            position = "dodge", 
+            color = "black")+
+          scale_fill_grey(start = 0.4, end = 0.8)+
+       facet_grid(Size ~ Time, labeller = labeller(Size = size_new_name, Time = time_new_name)) +
+ scale_x_discrete('TEMPERATURE (°C)')+
+       labs(x = expression(paste("TEMPERATURE (",degree,"C)")),
+            y = "MEAN GERMINATION (%)",
+            fill = "Depth (cm)")+
+  scale_y_continuous(limits = c(0, 120), breaks = seq(0, 100, by = 20), expand = c(0,0))+
+  geom_errorbar(aes(ymin = Perc, 
+                            ymax = Perc + SEPerc, 
+                            group = Depth),
+                      size=0.5,  
+                      width=0.25,
+                      position=position_dodge(width = 0.9))+
+  geom_text(aes(x = Temp, 
+                y = Perc + SEPerc,
+                label = Group, 
+                group = Depth),
+                    size = 5,
+            position=position_dodge(width = 0.9),
+                    vjust = -(0.3))+
+  theme_bw()+
+   theme(axis.title.x=element_text(size=12, colour = "black"),
+       axis.title.y=element_text(size=12, colour = "black"),
+       axis.text.y = element_text(size = 12, colour = "black"),
+       axis.text.x = element_text(size = 12, colour = "black"),
+       legend.text = element_text(size = 12, colour = "black"),
+       legend.title = element_text(size = 12, colour = "black"),
+       legend.position = c(.95, .95),
+       legend.justification = c("right", "top"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+       strip.text = element_text(size=12, face="bold"))+
+  theme(panel.spacing.x = unit(0.4, "cm"),
+        panel.spacing.y = unit(0.4, "cm"))
+         ggsave("plots/fig_10_temp_time_depth_size_lsd.png", units = "cm", width = 25, height = 25, dpi = 600)
+         
+         
+
+geom_text(aes(z,y,label=perc, group=x), position=position_dodge(width=1), size=4)
+
+```
+
+
+
+# dung
+
+## import
+
+```{r}
+
+dung_raw = read.xlsx("C:/Users/coetzeela/OneDrive - University of the Free State/Documents/1. Research/Publications/Meiring_Marlese/Alt management/management_prac-r-code/management_prac/manage.xlsx", "dung")
+
+
+dung_raw$weight_g <- as.factor(dung_raw$weight_g)
+
+
+```
+
+
+##ANOVA
+
+weight_g	num	germ_num	freq
+0.030	53	2	3.773584906
+0.262	24	0	0
+0.328	16	2	12.5
+0.400	8	0	0
+0.610	3	0	0
+
+
+### one way ANOVA
+
+
+```{r}
+
+# 1 - modified
+
+weight_g <- c(0.030, 0.262, 0.328, 0.400, 0.610)
+num <- c(53, 24, 16, 8, 3)
+germ_num <- c(2, 0, 2, 0, 0)
+freq <- c(3.77, 0, 12.5, 0, 0)
+
+
+dung <- data.frame(
+       Y=c(weight_g, num, freq),
+       variable = factor(rep(c("weight_g", "num", "freq"),
+                         times=c(length(weight_g), length(num), length(freq)))))
+
+dung_model <- aov(Y ~ variable, data = dung)
+anova(dung_model)
+
+# 2 - raw
+
+aov_d <- aov(germ_num ~ weight_g + num, data = dung_raw)
+
+summary(aov_d)
+
+write.xlsx(dung_model, "anova_dung1.xlsx")
+
+```
+
+
+## graphs
+
+```{r}
+ggplot(aes(weight_g, freq), data = dung_raw)+
+  geom_col( fill = "grey")+
+  geom_text(aes(weight_g, freq, label = num), hjust = 0.5, vjust = -0.5, size = 3.5)+
+    theme_bw()+
+    labs(x = "MEAN SCLEROTIAL WEIGHT (g)", y = "MEAN GERMINATION (%)")+
+  scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 20), expand = c(0,0))+
+  scale_x_discrete(labels=c("0.03" = "0.030", "0.262" = "0.262",
+                              "0.328" = "0.328", "0.4" = "0.400", "0.61" = "0.610"))+
+  theme(axis.title.x=element_text(size=9, colour = "black"),
+       axis.title.y=element_text(size=9, colour = "black"),
+       axis.text.y = element_text(size = 9, colour = "black"),
+       axis.text.x = element_text(size = 9, colour = "black"),
+       legend.text = element_text(size = 14, colour = "black"),
+       legend.title = element_text(size = 14, colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+       strip.background = element_rect(fill="white", size=1, color="black"))
+         ggsave("plots/fig_11_dung.png", units = "cm", width = 15, height = 10, dpi = 300)
+
+
+
+```
+
+# oilseed_focus
+
+```{r}
+oil_temp = ggplot(MeanSE_ABC, aes(x = temp,
+                          y = avg_ABC,
+                          fill = factor(time_min)))+ 
+          geom_bar(stat = "identity",
+                   color = "black",
+                   width = 0.8,
+                   position = position_dodge(width=0.9))+
+          scale_fill_brewer(palette="greens")+
+          labs(x = expression(paste("Temperature (",degree,"C)")),
+               y = "Mean sclerotia germination (%)",
+               fill = "Time (min)")+
+  geom_text(
+    aes(label = avg_ABC),
+    position = position_dodge(0.9),
+    vjust = -0.6)+
+  scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 20))+
+  facet_grid(depth_cm~., labeller = labeller(depth_cm = depth_new_name))+
+  theme_bw()+
+   theme(axis.title.x=element_text(size=20,face="bold"),
+       axis.title.y=element_text(size=20,face="bold"),
+       axis.text.y = element_text(size = 16, color = "black", face = "bold"),
+       axis.text.x = element_text(size = 16, color = "black", face = "bold"),
+       legend.text = element_text(size = 18),
+       legend.title = element_text(size = 20),
+       strip.background = element_rect(fill="white", size=1, color="black"), 
+       strip.text = element_text(size=14, face="bold"), 
+         panel.spacing = unit(2, "lines"))+
+         ggsave("plots/temp_time_depth_oil.png", units = "cm", width = 30, height = 25, dpi = 300)
+
+oil_temp
+
+oil_dung = ggplot(dung_raw, aes(x = weight_g,
+                          y = freq,
+                          fill = factor(freq)))+ 
+          geom_bar(stat = "identity",
+                   color = "black",
+                   width = 0.8,
+                   position = position_dodge(width=0.9), show.legend = FALSE)+
+          scale_fill_brewer(palette="greens")+
+          labs(x = "Mean sclerotial weight (g)", y = "Mean germination (%)")+
+  geom_text(
+    aes(label = num),
+    position = position_dodge(0.9),
+    vjust = -0.6,
+    size = 6)+
+  scale_y_continuous(limits = c(0, 70), breaks = seq(0, 70, by = 20))+
+  theme_bw()+
+   theme(axis.title.x=element_text(size=20,face="bold"),
+       axis.title.y=element_text(size=20,face="bold"),
+       axis.text.y = element_text(size = 16, color = "black", face = "bold"),
+       axis.text.x = element_text(size = 16, color = "black", face = "bold"),
+       legend.text = element_text(size = 18),
+       legend.title = element_text(size = 20),
+       strip.background = element_rect(fill="white", size=1, color="black"), 
+       strip.text = element_text(size=14, face="bold"), 
+         panel.spacing = unit(2, "lines"))+
+         ggsave("plots/dung_oil.png", units = "cm", width = 30, height = 25, dpi = 300)
+
+                 
+oil_dung
+
+```
+
+
+
+
+
+

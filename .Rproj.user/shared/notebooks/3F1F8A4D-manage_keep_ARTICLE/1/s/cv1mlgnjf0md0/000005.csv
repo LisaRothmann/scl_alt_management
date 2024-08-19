@@ -1,0 +1,23 @@
+"0","freq_df %>% 
+  ggplot()+
+  geom_boxplot(aes(temp, freq), fill = ""grey"")+
+  facet_grid(~depth_cm~time_min, labeller = labeller(depth_cm = new_label_depth, time_min = new_label_time))+
+    theme_bw()+
+    labs(x = expression(paste(""Temperature ("",degree,""C)"")), y = ""Germination (%)"")+
+  theme(axis.title.x=element_text(size=18,face=""bold""),
+       axis.title.y=element_text(size=18,face=""bold""),
+       axis.text.y = element_text(size = 14, color = ""black"", face = ""bold""),
+       axis.text.x = element_text(size = 14, color = ""black"", face = ""bold""),
+       legend.text = element_text(size = 16),
+       legend.title = element_text(size = 18),
+       strip.background = element_rect(fill=""white"", size=1, color=""black""),
+       strip.text.x = element_text(size=14, face=""bold""),
+       strip.text.y = element_text(size=14, face=""bold""))
+"
+"2","Warning in gzfile(file, ""wb"") :"
+"2","
+ "
+"2"," cannot open compressed file 'C:/Users/coetzeela/OneDrive - University of the Free State/Documents/1. Research/Publications/Meiring_Marlese/Alt management/management_prac-r-code/management_prac/.Rproj.user/shared/notebooks/3F1F8A4D-manage_keep_ARTICLE/1/s/cv1mlgnjf0md0_t/b7b641f334fb4f9db5cb6e3e180e7bc9.snapshot', probable reason 'No such file or directory'
+"
+"2","Error in gzfile(file, ""wb"") : cannot open the connection
+"
